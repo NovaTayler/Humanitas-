@@ -1,0 +1,1227 @@
+jsx
+
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import axios from 'axios';
+import { io } from 'socket.io-client';
+import { Shield, Lock, Brain, Network, Blocks, Zap, Activity, Settings, Users, Database, CheckCircle, Eye, EyeOff, RefreshCw, Cpu, HardDrive, Wifi, Server, Grid } from 'lucide-react';
+import './App.css';
+
+// Configuration
+const CONFIG = {
+  API_URL: process.env.REACT_APP_API_URL || 'http://localhost:8080',
+  WS_URL: process.env.REACT_APP_WS_URL || 'ws://localhost:8080',
+  THEME: {
+    primary: '#4f46e5',
+    secondary: '#7c3aed',
+    accent: '#06b6d4',
+    success: '#10b981',
+    warning: '#f59e0b',
+    error: '#ef4444',
+    background: '#0f172a',
+    card: '#1e293b',
+    text: '#e2e8f0'
+  }
+};
+
+// Authentication Context
+const AuthContext = React.createContext();
+const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(localStorage.getItem('omnimesh_token') || '');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (token) {
+      setUser({ id: 'user_001', username: 'admin', role: 'administrator' });
+    }
+    setLoading(false);
+  }, [token]);
+
+  const login = async (credentials) => {
+    try {
+      setLoading(true);
+      const response = await axios.post(`${CONFIG.API_URL}/auth/login`, credentials);
+      setToken(response.data.access_token);
+      setUser({ id: 'user_001', username: credentials.email, role: 'administrator' });
+      localStorage.setItem('omnimesh_token', response.data.access_token);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.response?.data?.detail || 'Login failed' };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const logout = () => {
+    setToken('');
+    setUser(null);
+    localStorage.removeItem('omnimesh_token');
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, token, loading, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+// Axios Interceptor
+axios.interceptors.request.use((config) => {
+  const token = localStorage.getItem('omnimesh_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// WebSocket Hook
+const useWebSocket = (onMessage) => {
+  const [connected, setConnected] = useState(false);
+  useEffect(() => {
+    const socket = io(CONFIG.WS_URL, {
+      path: '/ws/updates',
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
+    });
+    socket.on('connect', () => setConnected(true));
+    socket.on('message', onMessage);
+    socket.on('disconnect', () => setConnected(false));
+    socket.on('reconnect_error', () => console.error('WebSocket reconnection failed'));
+    return () => socket.disconnect();
+  }, [onMessage]);
+  return { connected };
+};
+
+// Login Component
+const Login = () => {
+  const { login } = useContext(AuthContext);
+  const [credentials, setCredentials] = useState({ email: '', password: '' });
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    const result = await login(credentials);
+    if (!result.success) {
+      setError(result.error);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-950 to-cyan-950 flex items-center justify-center p-4">
+      <div className="max-w-md w-full glass-card p-8 rounded-2xl shadow-2xl animate-fade-in">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-primary to-secondary rounded-full mb-4">
+            <Shield className="w-8 h-8 text-white" />
+          </div>
+          <h1 className="text-3xl font-bold text-white">OmniMesh</h1>
+          <p className="text-gray-300 text-sm mt-2">Advanced AI Orchestration Platform</p>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-gray-300 text-sm font-medium mb-1">Email</label>
+            <input
+              type="email"
+              value={credentials.email}
+              onChange={(e) => setCredentials({ ...credentials, email: e.target.value })}
+              className="w-full px-4 py-2 bg-gray-800 text-gray-100 border border-gray-700 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+              placeholder="Enter your email"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-gray-300 text-sm font-medium mb-1">Password</label>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={credentials.password}
+                onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
+                className="w-full px-4 py-2 bg-gray-800 text-gray-100 border border-gray-700 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 pr-10"
+                placeholder="Enter your password"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-200"
+              >
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
+          </div>
+          {error && (
+            <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-3 text-red-200 text-sm animate-pulse">
+              {error}
+            </div>
+          )}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-gradient-to-r from-primary to-secondary text-white py-3 px-4 rounded-lg font-medium hover:from-primary/80 hover:to-secondary/80 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 transition-all duration-300"
+          >
+            {loading ? (
+              <div className="flex items-center justify-center">
+                <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                Authenticating...
+              </div>
+            ) : (
+              'Sign In'
+            )}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// Dashboard Component
+const Dashboard = () => {
+  const { user, logout } = useContext(AuthContext);
+  const [metrics, setMetrics] = useState({});
+  const [activeSection, setActiveSection] = useState('overview');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  useWebSocket(setMetrics);
+
+  const sections = [
+    { id: 'overview', label: 'Overview', icon: Grid },
+    { id: 'system', label: 'System Metrics', icon: Activity },
+    { id: 'quantum', label: 'Quantum Ops', icon: Lock },
+    { id: 'ai', label: 'AI Operations', icon: Brain },
+    { id: 'federated', label: 'Fed Learning', icon: Network },
+    { id: 'swarm', label: 'Swarm Intel', icon: Users },
+    { id: 'blockchain', label: 'Blockchain', icon: Blocks },
+    { id: 'tasks', label: 'Task Manager', icon: CheckCircle },
+    { id: 'bots', label: 'Bot Swarm', icon: Zap }
+  ];
+
+  return (
+    <div className="flex h-screen bg-background">
+      <div className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-card border-r border-gray-700 transition-all duration-300`}>
+        <div className="p-4 border-b border-gray-700">
+          <div className="flex items-center justify-between">
+            <div className={`${sidebarOpen ? 'block' : 'hidden'}`}>
+              <h1 className="text-xl font-bold text-white">OmniMesh</h1>
+              <p className="text-sm text-gray-400">v2.1.0</p>
+            </div>
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="p-2 text-gray-400 hover:text-white rounded-lg hover:bg-gray-700"
+            >
+              <Grid className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+        <nav className="p-4 space-y-2">
+          {sections.map(section => (
+            <button
+              key={section.id}
+              onClick={() => setActiveSection(section.id)}
+              className={`w-full flex items-center px-3 py-2 rounded-lg transition-colors ${
+                activeSection === section.id ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'
+              }`}
+            >
+              <section.icon className="w-5 h-5" />
+              {sidebarOpen && <span className="ml-3">{section.label}</span>}
+            </button>
+          ))}
+        </nav>
+        <div className="absolute bottom-4 left-4 right-4">
+          <div className={`${sidebarOpen ? 'block' : 'hidden'} bg-gray-700 rounded-lg p-3 mb-3`}>
+            <div className="flex items-center">
+              <div className="w-8 h-8 bg-indigo-600 rounded-full mr-3" />
+              <div className="flex-1">
+                <p className="text-white text-sm font-medium">{user?.username}</p>
+                <p className="text-gray-400 text-xs">{user?.role}</p>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={logout}
+            className="w-full flex items-center justify-center px-3 py-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+          >
+            <Settings className="w-5 h-5" />
+            {sidebarOpen && <span className="ml-3">Logout</span>}
+          </button>
+        </div>
+      </div>
+      <div className="flex-1 overflow-auto">
+        <div className="p-6">
+          <div className="mb-6">
+            <h2 className="text-2xl font-bold text-white">{sections.find(s => s.id === activeSection)?.label}</h2>
+            <p className="text-gray-400">
+              {activeSection === 'overview' && 'System overview and real-time monitoring'}
+              {activeSection === 'system' && 'Hardware and system performance metrics'}
+              {activeSection === 'quantum' && 'Quantum encryption and cryptographic operations'}
+              {activeSection === 'ai' && 'Artificial intelligence and machine learning operations'}
+              {activeSection === 'federated' && 'Federated learning network management'}
+              {activeSection === 'swarm' && 'Swarm intelligence optimization algorithms'}
+              {activeSection === 'blockchain' && 'Blockchain operations and smart contracts'}
+              {activeSection === 'tasks' && 'Distributed task management and scheduling'}
+              {activeSection === 'bots' && 'Bot swarm deployment and monitoring'}
+            </p>
+          </div>
+          {activeSection === 'overview' && <OverviewSection metrics={metrics} />}
+          {activeSection === 'system' && <SystemMetrics metrics={metrics} />}
+          {activeSection === 'quantum' && <QuantumEncryption />}
+          {activeSection === 'ai' && <AIOperations />}
+          {activeSection === 'federated' && <FederatedLearning />}
+          {activeSection === 'swarm' && <SwarmIntelligence />}
+          {activeSection === 'blockchain' && <BlockchainOperations />}
+          {activeSection === 'tasks' && <TaskManagement />}
+          {activeSection === 'bots' && <BotSwarm />}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Overview Section
+const OverviewSection = ({ metrics }) => {
+  const stats = [
+    { label: 'Active Nodes', value: metrics?.active_connections || 0, icon: Server, color: 'text-blue-400' },
+    { label: 'CPU Usage', value: `${Math.round(metrics?.cpu_percent || 0)}%`, icon: Cpu, color: 'text-green-400' },
+    { label: 'Memory Usage', value: `${Math.round(metrics?.memory_percent || 0)}%`, icon: HardDrive, color: 'text-yellow-400' },
+    { label: 'Network I/O', value: `${Math.round(metrics?.network_io?.sent || 0)} MB/s`, icon: Wifi, color: 'text-purple-400' },
+    { label: 'Active Bots', value: metrics?.active_bots || 0, icon: Zap, color: 'text-indigo-400' },
+    { label: 'Sales', value: `$${Math.round(metrics?.sales || 0)}`, icon: Database, color: 'text-teal-400' }
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {stats.map((stat, index) => (
+          <div key={index} className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-400 text-sm">{stat.label}</p>
+                <p className="text-2xl font-bold text-white mt-1">{stat.value}</p>
+              </div>
+              <stat.icon className={`w-8 h-8 ${stat.color}`} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <SystemMetrics metrics={metrics} />
+        <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
+          <h3 className="text-lg font-bold text-white mb-4">System Status</h3>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400">Quantum Engine</span>
+              <div className="flex items-center text-green-400">
+                <CheckCircle className="w-4 h-4 mr-2" />
+                Online
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400">AI Models</span>
+              <div className="flex items-center text-green-400">
+                <CheckCircle className="w-4 h-4 mr-2" />
+                Loaded
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400">Blockchain Sync</span>
+              <div className="flex items-center text-green-400">
+                <CheckCircle className="w-4 h-4 mr-2" />
+                Synced
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// System Metrics
+const SystemMetrics = ({ metrics }) => {
+  const CircularProgress = ({ value, label, color = 'indigo' }) => {
+    const circumference = 2 * Math.PI * 40;
+    const strokeDashoffset = circumference - (value / 100) * circumference;
+    return (
+      <div className="flex flex-col items-center">
+        <div className="relative w-20 h-20">
+          <svg className="w-20 h-20 transform -rotate-90" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="40" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-gray-700" />
+            <circle
+              cx="50"
+              cy="50"
+              r="40"
+              stroke="currentColor"
+              strokeWidth="8"
+              fill="transparent"
+              strokeDasharray={circumference}
+              strokeDashoffset={strokeDashoffset}
+              className={`text-${color}-400 transition-all duration-500`}
+              strokeLinecap="round"
+            />
+            <text x="50" y="50" textAnchor="middle" dy=".3em" className="text-sm font-bold text-white">{Math.round(value)}%</text>
+          </svg>
+        </div>
+        <span className="text-xs text-gray-400 mt-2">{label}</span>
+      </div>
+    );
+  };
+
+  return (
+    <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-lg font-bold text-white flex items-center">
+          <Activity className="w-5 h-5 mr-2 text-indigo-400" />
+          System Metrics
+        </h3>
+        <div className="flex items-center text-green-400 text-sm">
+          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse mr-2" />
+          Live
+        </div>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <CircularProgress value={metrics?.cpu_percent || 0} label="CPU" color="blue" />
+        <CircularProgress value={metrics?.memory_percent || 0} label="Memory" color="green" />
+        <CircularProgress value={metrics?.disk_percent || 0} label="Disk" color="yellow" />
+        <CircularProgress value={(metrics?.network_io?.sent || 0) / 10} label="Network" color="purple" />
+      </div>
+    </div>
+  );
+};
+
+// Quantum Encryption
+const QuantumEncryption = () => {
+  const [operation, setOperation] = useState('encrypt');
+  const [label, setLabel] = useState('');
+  const [data, setData] = useState('');
+  const [result, setResult] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const executeOperation = async () => {
+    setLoading(true);
+    try {
+      const response = await axios.post(
+        `${CONFIG.API_URL}/api/crypto/${operation}`,
+        { label, data: JSON.parse(data) }
+      );
+      setResult(JSON.stringify(response.data, null, 2));
+    } catch (error) {
+      setResult(`Error: ${error.response?.data?.detail || 'Operation failed'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-bold text-white flex items-center">
+            <Lock className="w-5 h-5 mr-2 text-purple-400" />
+            Quantum Encryption Engine
+          </h3>
+          <button
+            onClick={() => setOperation(operation === 'encrypt' ? 'decrypt' : 'encrypt')}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+          >
+            {operation === 'encrypt' ? 'Encrypt Mode' : 'Decrypt Mode'}
+          </button>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            {operation === 'encrypt' && (
+              <div>
+                <label className="block text-gray-400 text-sm mb-2">Label</label>
+                <input
+                  type="text"
+                  value={label}
+                  onChange={(e) => setLabel(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+                  placeholder="Vault label"
+                />
+              </div>
+            )}
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">
+                {operation === 'encrypt' ? 'Plaintext Data' : 'Encrypted Data'}
+              </label>
+              <textarea
+                value={data}
+                onChange={(e) => setData(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:border-purple-500 focus:outline-none h-32 resize-none font-mono text-sm"
+                placeholder={operation === 'encrypt' ? 'Enter JSON data (e.g., {"message": "secret"})' : 'Enter encrypted data...'}
+              />
+            </div>
+            <button
+              onClick={executeOperation}
+              disabled={loading || !data || (operation === 'encrypt' && !label)}
+              className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3 px-4 rounded-lg hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 transition-all duration-200"
+            >
+              {loading ? (
+                <div className="flex items-center justify-center">
+                  <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                  Processing...
+                </div>
+              ) : (
+                `${operation.charAt(0).toUpperCase() + operation.slice(1)} Data`
+              )}
+            </button>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Result</label>
+              <textarea
+                value={result}
+                readOnly
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 h-32 resize-none font-mono text-sm"
+                placeholder="Result will appear here..."
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// AI Operations
+const AIOperations = () => {
+  const [operation, setOperation] = useState('generate');
+  const [prompt, setPrompt] = useState('');
+  const [text, setText] = useState('');
+  const [result, setResult] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const operations = [
+    { id: 'generate', label: 'Text Generation' },
+    { id: 'sentiment', label: 'Sentiment Analysis' },
+    { id: 'question', label: 'Question Answering' },
+    { id: 'summarize', label: 'Summarization' },
+    { id: 'ner', label: 'Named Entity Recognition' },
+    { id: 'predict', label: 'Time Series Prediction' }
+  ];
+
+  const executeOperation = async () => {
+    setLoading(true);
+    try {
+      let response;
+      if (operation === 'generate') {
+        response = await axios.post(`${CONFIG.API_URL}/api/ai/generate`, { prompt });
+      } else if (operation === 'sentiment') {
+        response = await axios.post(`${CONFIG.API_URL}/api/ai/sentiment`, { text });
+      } else if (operation === 'question') {
+        response = await axios.post(`${CONFIG.API_URL}/api/ai/question`, { question: prompt, context: text });
+      } else if (operation === 'summarize') {
+        response = await axios.post(`${CONFIG.API_URL}/api/ai/summarize`, { text });
+      } else if (operation === 'ner') {
+        response = await axios.post(`${CONFIG.API_URL}/api/ai/ner`, { text });
+      } else if (operation === 'predict') {
+        response = await axios.post(`${CONFIG.API_URL}/api/ai/predict`, { data: JSON.parse(text) });
+      }
+      setResult(JSON.stringify(response.data, null, 2));
+    } catch (error) {
+      setResult(`Error: ${error.response?.data?.detail || 'Operation failed'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-bold text-white flex items-center">
+            <Brain className="w-5 h-5 mr-2 text-indigo-400" />
+            AI Operations
+          </h3>
+          <select
+            value={operation}
+            onChange={(e) => setOperation(e.target.value)}
+            className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-indigo-500 focus:outline-none transition-colors"
+          >
+            {operations.map(op => (
+              <option key={op.id} value={op.id}>{op.label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Input</label>
+              <textarea
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-indigo-500 focus:outline-none h-32 resize-none"
+                placeholder="Enter your prompt or input here..."
+              />
+            </div>
+            {operation === 'question' && (
+              <div>
+                <label className="block text-gray-400 text-sm mb-2">Context</label>
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-indigo-500 focus:outline-none h-32 resize-none"
+                  placeholder="Enter context for question answering..."
+                />
+              </div>
+            )}
+            {operation === 'predict' && (
+              <div>
+                <label className="block text-gray-400 text-sm mb-2">Data</label>
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-indigo-500 focus:outline-none h-32 resize-none font-mono text-sm"
+                  placeholder='Enter data as [[float, ...], ...]'
+                />
+              </div>
+            )}
+            <button
+              onClick={executeOperation}
+              disabled={loading || !prompt}
+              className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 px-4 rounded-lg hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 transition-all duration-200"
+            >
+              {loading ? (
+                <div className="flex items-center justify-center">
+                  <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                  Processing...
+                </div>
+              ) : (
+                'Execute'
+              )}
+            </button>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Result</label>
+              <textarea
+                value={result}
+                readOnly
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 h-32 resize-none font-mono text-sm"
+                placeholder="Result will appear here..."
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Federated Learning
+const FederatedLearning = () => {
+  const [architecture, setArchitecture] = useState('');
+  const [participants, setParticipants] = useState('');
+  const [roundId, setRoundId] = useState('');
+  const [weights, setWeights] = useState('');
+  const [result, setResult] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const createRound = async () => {
+    setLoading(true);
+    try:
+      const response = await axios.post(`${CONFIG.API_URL}/api/federated/create`, {
+        model_architecture: JSON.parse(architecture),
+        participants: JSON.parse(participants)
+      });
+      setResult(JSON.stringify(response.data, null, 2));
+    } catch (error) {
+      setResult(`Error: ${error.response?.data?.detail || 'Operation failed'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitUpdate = async () => {
+    setLoading(true);
+    try:
+      const response = await axios.post(`${CONFIG.API_URL}/api/federated/update`, {
+        round_id: roundId,
+        model_weights: new TextEncoder().encode(weights)
+      });
+      setResult(JSON.stringify(response.data, null, 2));
+    } catch (error) {
+      setResult(`Error: ${error.response?.data?.detail || 'Operation failed'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-bold text-white flex items-center">
+            <Network className="w-5 h-5 mr-2 text-green-400" />
+            Federated Learning
+          </h3>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Model Architecture</label>
+              <textarea
+                value={architecture}
+                onChange={(e) => setArchitecture(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-green-500 focus:outline-none h-32 resize-none font-mono text-sm"
+                placeholder='Enter JSON (e.g., {"input_size": 100, "output_size": 10})'
+              />
+            </div>
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Participants</label>
+              <textarea
+                value={participants}
+                onChange={(e) => setParticipants(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-green-500 focus:outline-none h-32 resize-none font-mono text-sm"
+                placeholder='Enter JSON (e.g., ["node1", "node2"])'
+              />
+            </div>
+            <button
+              onClick={createRound}
+              disabled={loading || !architecture || !participants}
+              className="w-full bg-gradient-to-r from-green-600 to-teal-600 text-white py-3 px-4 rounded-lg hover:from-green-700 hover:to-teal-700 disabled:opacity-50 transition-all duration-200"
+            >
+              {loading ? (
+                <div className="flex items-center justify-center">
+                  <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                  Creating...
+                </div>
+              ) : (
+                'Create Round'
+              )}
+            </button>
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Round ID</label>
+              <input
+                type="text"
+                value={roundId}
+                onChange={(e) => setRoundId(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-green-500 focus:outline-none"
+                placeholder="Enter round ID"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Model Weights</label>
+              <textarea
+                value={weights}
+                onChange={(e) => setWeights(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-green-500 focus:outline-none h-32 resize-none font-mono text-sm"
+                placeholder="Enter serialized weights"
+              />
+            </div>
+            <button
+              onClick={submitUpdate}
+              disabled={loading || !roundId || !weights}
+              className="w-full bg-gradient-to-r from-green-600 to-teal-600 text-white py-3 px-4 rounded-lg hover:from-green-700 hover:to-teal-700 disabled:opacity-50 transition-all duration-200"
+            >
+              {loading ? (
+                <div className="flex items-center justify-center">
+                  <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                  Submitting...
+                </div>
+              ) : (
+                'Submit Update'
+              )}
+            </button>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Result</label>
+              <textarea
+                value={result}
+                readOnly
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 h-32 resize-none font-mono text-sm"
+                placeholder="Result will appear here..."
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Swarm Intelligence
+const SwarmIntelligence = () => {
+  const [problem, setProblem] = useState('sphere');
+  const [dimensions, setDimensions] = useState('10');
+  const [agents, setAgents] = useState('100');
+  const [swarmId, setSwarmId] = useState('');
+  const [situation, setSituation] = useState('');
+  const [result, setResult] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const createSwarm = async () => {
+    setLoading(true);
+    try:
+      const response = await axios.post(`${CONFIG.API_URL}/api/swarm/create`, {
+        problem,
+        dimensions: parseInt(dimensions),
+        agents: parseInt(agents)
+      });
+      setResult(JSON.stringify(response.data, null, 2));
+    } catch (error) {
+      setResult(`Error: ${error.response?.data?.detail || 'Operation failed'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const stepSwarm = async () => {
+    setLoading(true);
+    try:
+      const response = await axios.post(`${CONFIG.API_URL}/api/swarm/step`, {}, { params: { swarm_id: swarmId } });
+      setResult(JSON.stringify(response.data, null, 2));
+    } catch (error) {
+      setResult(`Error: ${error.response?.data?.detail || 'Operation failed'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const coordinateSwarm = async () => {
+    setLoading(true);
+    try:
+      const response = await axios.post(`${CONFIG.API_URL}/api/swarm/coordinate`, {
+        swarm_id: swarmId,
+        situation: JSON.parse(situation)
+      });
+      setResult(JSON.stringify(response.data, null, 2));
+    } catch (error) {
+      setResult(`Error: ${error.response?.data?.detail || 'Operation failed'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-bold text-white flex items-center">
+            <Users className="w-5 h-5 mr-2 text-yellow-400" />
+            Swarm Intelligence
+          </h3>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Problem</label>
+              <select
+                value={problem}
+                onChange={(e) => setProblem(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-yellow-500 focus:outline-none transition-colors"
+              >
+                <option value="sphere">Sphere</option>
+                <option value="rastrigin">Rastrigin</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Dimensions</label>
+              <input
+                type="number"
+                value={dimensions}
+                onChange={(e) => setDimensions(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-yellow-500 focus:outline-none"
+                placeholder="e.g., 10"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Agents</label>
+              <input
+                type="number"
+                value={agents}
+                onChange={(e) => setAgents(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-yellow-500 focus:outline-none"
+                placeholder="e.g., 100"
+              />
+            </div>
+            <button
+              onClick={createSwarm}
+              disabled={loading || !problem || !dimensions || !agents}
+              className="w-full bg-gradient-to-r from-yellow-600 to-orange-600 text-white py-3 px-4 rounded-lg hover:from-yellow-700 hover:to-orange-700 disabled:opacity-50 transition-all duration-200"
+            >
+              {loading ? (
+                <div className="flex items-center justify-center">
+                  <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                  Creating...
+                </div>
+              ) : (
+                'Create Swarm'
+              )}
+            </button>
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Swarm ID</label>
+              <input
+                type="text"
+                value={swarmId}
+                onChange={(e) => setSwarmId(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-yellow-500 focus:outline-none"
+                placeholder="Enter swarm ID"
+              />
+            </div>
+            <button
+              onClick={stepSwarm}
+              disabled={loading || !swarmId}
+              className="w-full bg-gradient-to-r from-yellow-600 to-orange-600 text-white py-3 px-4 rounded-lg hover:from-yellow-700 hover:to-orange-700 disabled:opacity-50 transition-all duration-200"
+            >
+              {loading ? (
+                <div className="flex items-center justify-center">
+                  <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                  Stepping...
+                </div>
+              ) : (
+                'Step Swarm'
+              )}
+            </button>
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Situation</label>
+              <textarea
+                value={situation}
+                onChange={(e) => setSituation(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-yellow-500 focus:outline-none h-32 resize-none font-mono text-sm"
+                placeholder='Enter JSON (e.g., {"nodes": ["node1", "node2"]})'
+              />
+            </div>
+            <button
+              onClick={coordinateSwarm}
+              disabled={loading || !swarmId || !situation}
+              className="w-full bg-gradient-to-r from-yellow-600 to-orange-600 text-white py-3 px-4 rounded-lg hover:from-yellow-700 hover:to-orange-700 disabled:opacity-50 transition-all duration-200"
+            >
+              {loading ? (
+                <div className="flex items-center justify-center">
+                  <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                  Coordinating...
+                </div>
+              ) : (
+                'Coordinate Swarm'
+              )}
+            </button>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Result</label>
+              <textarea
+                value={result}
+                readOnly
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 h-32 resize-none font-mono text-sm"
+                placeholder="Result will appear here..."
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Blockchain Operations
+const BlockchainOperations = () => {
+  const [data, setData] = useState('');
+  const [result, setResult] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const submitToBlockchain = async () => {
+    setLoading(true);
+    try:
+      const response = await axios.post(`${CONFIG.API_URL}/api/blockchain/submit`, { data: JSON.parse(data) });
+      setResult(JSON.stringify(response.data, null, 2));
+    } catch (error) {
+      setResult(`Error: ${error.response?.data?.detail || 'Operation failed'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-bold text-white flex items-center">
+            <Blocks className="w-5 h-5 mr-2 text-blue-400" />
+            Blockchain Operations
+          </h3>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Data</label>
+              <textarea
+                value={data}
+                onChange={(e) => setData(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-blue-500 focus:outline-none h-32 resize-none font-mono text-sm"
+                placeholder='Enter JSON data (e.g., {"key": "value"})'
+              />
+            </div>
+            <button
+              onClick={submitToBlockchain}
+              disabled={loading || !data}
+              className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 text-white py-3 px-4 rounded-lg hover:from-blue-700 hover:to-cyan-700 disabled:opacity-50 transition-all duration-200"
+            >
+              {loading ? (
+                <div className="flex items-center justify-center">
+                  <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                  Submitting...
+                </div>
+              ) : (
+                'Submit to Blockchain'
+              )}
+            </button>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Result</label>
+              <textarea
+                value={result}
+                readOnly
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 h-32 resize-none font-mono text-sm"
+                placeholder="Result will appear here..."
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Task Management
+const TaskManagement = () => {
+  const [taskType, setTaskType] = useState('');
+  const [payload, setPayload] = useState('');
+  const [result, setResult] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const createTask = async () => {
+    setLoading(true);
+    try:
+      const response = await axios.post(`${CONFIG.API_URL}/api/task/create`, {
+        task_type: taskType,
+        payload: JSON.parse(payload)
+      });
+      setResult(JSON.stringify(response.data, null, 2));
+    } catch (error) {
+      setResult(`Error: ${error.response?.data?.detail || 'Operation failed'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-bold text-white flex items-center">
+            <CheckCircle className="w-5 h-5 mr-2 text-teal-400" />
+            Task Management
+          </h3>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Task Type</label>
+              <input
+                type="text"
+                value={taskType}
+                onChange={(e) => setTaskType(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-teal-500 focus:outline-none"
+                placeholder="Enter task type (e.g., data_processing)"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Payload</label>
+              <textarea
+                value={payload}
+                onChange={(e) => setPayload(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-teal-500 focus:outline-none h-32 resize-none font-mono text-sm"
+                placeholder='Enter JSON payload (e.g., {"data": "example"})'
+              />
+            </div>
+            <button
+              onClick={createTask}
+              disabled={loading || !taskType || !payload}
+              className="w-full bg-gradient-to-r from-teal-600 to-green-600 text-white py-3 px-4 rounded-lg hover:from-teal-700 hover:to-green-700 disabled:opacity-50 transition-all duration-200"
+            >
+              {loading ? (
+                <div className="flex items-center justify-center">
+                  <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                  Creating...
+                </div>
+              ) : (
+                'Create Task'
+              )}
+            </button>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Result</label>
+              <textarea
+                value={result}
+                readOnly
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 h-32 resize-none font-mono text-sm"
+                placeholder="Result will appear here..."
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Bot Swarm Section
+const BotSwarm = () => {
+  const [botType, setBotType] = useState('ecommerce');
+  const [platforms, setPlatforms] = useState('');
+  const [objectives, setObjectives] = useState('');
+  const [nodes, setNodes] = useState('');
+  const [scale, setScale] = useState('10');
+  const [autoScaling, setAutoScaling] = useState(true);
+  const [result, setResult] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const deploySwarm = async () => {
+    setLoading(true);
+    try:
+      const response = await axios.post(`${CONFIG.API_URL}/api/swarm/deploy`, {
+        bot_type: botType,
+        target_platforms: platforms.split(',').map(p => p.trim()),
+        objectives: objectives.split(',').map(o => o.trim()),
+        target_nodes: nodes.split(',').map(n => n.trim()),
+        scale: parseInt(scale),
+        auto_scaling: autoScaling
+      });
+      setResult(JSON.stringify(response.data, null, 2));
+    } catch (error) {
+      setResult(`Error: ${error.response?.data?.detail || 'Operation failed'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-bold text-white flex items-center">
+            <Zap className="w-5 h-5 mr-2 text-red-400" />
+            Bot Swarm Deployment
+          </h3>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Bot Type</label>
+              <select
+                value={botType}
+                onChange={(e) => setBotType(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-red-500 focus:outline-none transition-colors"
+              >
+                <option value="ecommerce">E-commerce</option>
+                <option value="content">Content</option>
+                <option value="trading">Trading</option>
+                <option value="research">Research</option>
+                <option value="deployment">Deployment</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Target Platforms</label>
+              <input
+                type="text"
+                value={platforms}
+                onChange={(e) => setPlatforms(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-red-500 focus:outline-none"
+                placeholder="e.g., ebay,amazon,shopify"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Objectives</label>
+              <input
+                type="text"
+                value={objectives}
+                onChange={(e) => setObjectives(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-red-500 focus:outline-none"
+                placeholder="e.g., maximize sales,optimize pricing"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Target Nodes</label>
+              <input
+                type="text"
+                value={nodes}
+                onChange={(e) => setNodes(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-red-500 focus:outline-none"
+                placeholder="e.g., node1,node2,node3"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Scale</label>
+              <input
+                type="number"
+                value={scale}
+                onChange={(e) => setScale(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 focus:border-red-500 focus:outline-none"
+                placeholder="e.g., 10"
+              />
+            </div>
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                checked={autoScaling}
+                onChange={(e) => setAutoScaling(e.target.checked)}
+                className="mr-2"
+              />
+              <label className="text-gray-400 text-sm">Auto Scaling</label>
+            </div>
+            <button
+              onClick={deploySwarm}
+              disabled={loading || !botType || !platforms || !objectives || !nodes || !scale}
+              className="w-full bg-gradient-to-r from-red-600 to-pink-600 text-white py-3 px-4 rounded-lg hover:from-red-700 hover:to-pink-700 disabled:opacity-50 transition-all duration-200"
+            >
+              {loading ? (
+                <div className="flex items-center justify-center">
+                  <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                  Deploying...
+                </div>
+              ) : (
+                'Deploy Swarm'
+              )}
+            </button>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-gray-400 text-sm mb-2">Result</label>
+              <textarea
+                value={result}
+                readOnly
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-gray-400 h-32 resize-none font-mono text-sm"
+                placeholder="Result will appear here..."
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Main App
+const App = () => {
+  return (
+    <AuthProvider>
+      <Router>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<Dashboard />} />
+        </Routes>
+      </Router>
+    </AuthProvider>
+  );
+};
+
+export default App;
+
