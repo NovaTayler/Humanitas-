@@ -1,0 +1,13 @@
+├── backend/
+│   ├── Merged Script.txt  (renamed to app.py)
+│   ├── requirements.txt
+│   └── Dockerfile
+├── frontend/
+│   ├── Frontend June 17th.txt  (renamed to App.jsx or split into components)
+│   ├── public/
+│   ├── src/
+│   ├── package.json
+│   └── Dockerfile
+├── .github/
+│   └── workflows/
+│       └── cloud-run.yml
