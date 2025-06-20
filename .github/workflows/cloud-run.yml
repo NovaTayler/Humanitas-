@@ -1,0 +1,77 @@
+name: Deploy to Google Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+  BACKEND_SERVICE_NAME: dropshipping-backend
+  FRONTEND_SERVICE_NAME: dropshipping-frontend
+  ARTIFACT_REGISTRY: us-central1-docker.pkg.dev
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    # Permissions for Google Cloud authentication
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      # Checkout code
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Authenticate to Google Cloud
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      # Set up Google Cloud SDK
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      # Configure Docker to use gcloud credentials
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.ARTIFACT_REGISTRY }}
+
+      # Build and push backend Docker image
+      - name: Build and Push Backend
+        working-directory: ./backend
+        run: |
+          docker build -t ${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/dropshipping-backend:latest .
+          docker push ${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/dropshipping-backend:latest
+
+      # Build and push frontend Docker image
+      - name: Build and Push Frontend
+        working-directory: ./frontend
+        run: |
+          docker build -t ${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/dropshipping-frontend:latest .
+          docker push ${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/dropshipping-frontend:latest
+
+      # Deploy backend to Cloud Run
+      - name: Deploy Backend to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.BACKEND_SERVICE_NAME }} \
+            --image ${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/dropshipping-backend:latest \
+            --region ${{ env.REGION }} \
+            --platform managed \
+            --allow-unauthenticated \
+            --set-env-vars "POSTGRES_URL=${{ secrets.POSTGRES_URL }},REDIS_URL=${{ secrets.REDIS_URL }},BTC_WALLET=${{ secrets.BTC_WALLET }},PAYPAL_EMAIL=${{ secrets.PAYPAL_EMAIL }},CAPTCHA_API_KEY=${{ secrets.CAPTCHA_API_KEY }}"
+
+      # Deploy frontend to Cloud Run
+      - name: Deploy Frontend to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.FRONTEND_SERVICE_NAME }} \
+            --image ${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/dropshipping-frontend:latest \
+            --region ${{ env.REGION }} \
+            --platform managed \
+            --allow-unauthenticated \
+            --set-env-vars "REACT_APP_API_URL=https://${{ env.BACKEND_SERVICE_NAME }}-${{ env.REGION }}.run.app"
